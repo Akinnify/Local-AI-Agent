@@ -18,8 +18,11 @@ export default function App() {
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
 
+  // dots show only while waiting for the first word of the answer
+  const waiting = loading && messages[messages.length - 1]?.role === "user";
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    bottomRef.current?.scrollIntoView({ behavior: loading ? "auto" : "smooth" });
   }, [messages, loading]);
 
   // grow the textarea with its content, up to a limit
@@ -29,6 +32,15 @@ export default function App() {
     el.style.height = "auto";
     el.style.height = Math.min(el.scrollHeight, 140) + "px";
   }, [input]);
+
+  function appendToLast(piece) {
+    setMessages((m) => {
+      const copy = [...m];
+      const last = copy[copy.length - 1];
+      copy[copy.length - 1] = { ...last, content: last.content + piece };
+      return copy;
+    });
+  }
 
   async function send(textOverride) {
     const text = (textOverride ?? input).trim();
@@ -40,7 +52,7 @@ export default function App() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${API}/chat`, {
+      const res = await fetch(`${API}/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -51,9 +63,32 @@ export default function App() {
             .map(({ role, content }) => ({ role, content })),
         }),
       });
-      if (!res.ok) throw new Error(`Server error ${res.status}`);
-      const data = await res.json();
-      setMessages((m) => [...m, { role: "assistant", content: data.reply }]);
+      if (!res.ok || !res.body) throw new Error(`Server error ${res.status}`);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let started = false;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const piece = decoder.decode(value, { stream: true });
+        if (!piece) continue;
+
+        if (!started) {
+          started = true;
+          setMessages((m) => [...m, { role: "assistant", content: piece }]);
+        } else {
+          appendToLast(piece);
+        }
+      }
+
+      if (!started) {
+        setMessages((m) => [
+          ...m,
+          { role: "assistant", error: true, content: "The agent didn't return an answer. Try asking again." },
+        ]);
+      }
     } catch {
       setMessages((m) => [
         ...m,
@@ -136,7 +171,7 @@ export default function App() {
           )
         )}
 
-        {loading && (
+        {waiting && (
           <div className="msg agent" aria-label="The agent is thinking">
             <span className="dots"><i /><i /><i /></span>
           </div>
