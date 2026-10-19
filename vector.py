@@ -4,8 +4,8 @@ from langchain_core.documents import Document
 import os
 import pandas as pd
 
-df = pd.read_csv("realistic_restaurant_reviews.csv")
-embeddings = OllamaEmbeddings(model=" mxbai-embed-large")
+df = pd.read_csv("realistic_restaurant_reviews.csv") # to read the dataset of restaurant reviews
+embeddings = OllamaEmbeddings(model=" mxbai-embed-large") #define the embedding model to use for generating embeddings for the reviews
 
 db_location = "./chrome_langchain_db"
 add_documents = not os.path.exists(db_location)
